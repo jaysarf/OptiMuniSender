@@ -1,6 +1,6 @@
 # OptiSender
 
-A Python bridge that reads raw swing data from an **OptiShot 2** golf simulator mat over USB HID and forwards calculated ball-flight telemetry to **OpenGolfSim** via a TCP socket API.
+A Python bridge that reads raw swing data from an **OptiShot 2** golf simulator mat over USB HID and forwards calculated ball-flight telemetry to **OpenGolfSim** or to any **GSPro Open Connect v1** simulator (e.g. [Muni Golf](https://munigolfsim.com/), [OpenGolf Connect](https://opengolfapi.org/connect/)) via a TCP socket API.
 
 Logic and packet structure were ported from the [RepliShot](https://github.com/RepliShot) C++ project (`usbcode.cpp`, `shotprocessing.cpp`). The Python layer adds a physics/ball-flight engine, a real-time tuning editor, and a simulation mode for development without hardware.
 
@@ -85,8 +85,25 @@ If OpenGolfSim is not yet running when OptiSender starts, that is fine. OptiSend
 ### 2. Run OptiSender
 
 ```bash
-python OptiSender.py
+python OptiSender.py                       # OpenGolfSim (default, 127.0.0.1:3111)
+python OptiSender.py --target munigolf     # Muni Golf / GSPro Open Connect (127.0.0.1:921)
 ```
+
+| Option | Default | Description |
+|---|---|---|
+| `--target` | `ogs` | `ogs` = OpenGolfSim device API. `munigolf` (alias `gspro`) = GSPro Open Connect API v1 |
+| `--host` | `127.0.0.1` | Simulator host |
+| `--port` | `3111` (ogs) / `921` (munigolf) | Simulator port — use the port shown in the simulator's Open Connect settings if it differs |
+
+With the executable, add the options to a Windows shortcut target, e.g. `OptiSender.exe --target munigolf`.
+
+#### Muni Golf setup
+
+1. In Muni Golf, select the **Open Connect API** launch monitor option.
+2. Start OptiSender with `--target munigolf` (add `--port <n>` if Muni Golf listens on a port other than 921).
+3. When Muni Golf reports the player's club (`Code 201`), the active club in OptiSender updates automatically. GSPro club codes (`DR`, `W3`, `H4`, `I7`, `PW`, `PT`, …) are mapped to the tuning profiles in `tuning.json`. All hybrids use the `5H` profile, and `I1`/`I2` use `3I`.
+
+Shots are sent as GSPro Open Connect v1 JSON (`BallData`: Speed mph, VLA, HLA, TotalSpin, SpinAxis, BackSpin, SideSpin; `ClubData`: Speed, Path, FaceToTarget). A heartbeat is sent every 2 seconds.
 
 ### 3. Startup behaviour
 
@@ -567,7 +584,8 @@ When the Tuning Editor saves or reverts, it sets `tuning_editor.reload_needed` (
 
 | File | Role |
 |---|---|
-| [OptiSender.py](OptiSender.py) | Entry point; main loop, API socket, keyboard handler, physics reload |
+| [OptiSender.py](OptiSender.py) | Entry point; main loop, command-line options, keyboard handler, physics reload |
+| [sim_api.py](sim_api.py) | Simulator API clients: OpenGolfSim and GSPro Open Connect v1 (Muni Golf) |
 | [opti_reader.py](opti_reader.py) | HID device open/close, command writes, raw 60-byte reads |
 | [data_filters.py](data_filters.py) | Duplicate and validity filters before processing |
 | [shot_processor.py](shot_processor.py) | 60-byte packet parser; speed, face angle, path, contact |

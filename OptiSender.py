@@ -1,7 +1,5 @@
 import time
-import socket
-import json
-import select
+import argparse
 try:
     from pynput import keyboard
 except ImportError:
@@ -18,9 +16,7 @@ from data_filters import OptiFilter
 from shot_processor import ShotProcessor
 from overlay_display import OverlayDisplay
 from tuning_editor import TuningEditor
-
-API_IP = "127.0.0.1"
-API_PORT = 3111
+import sim_api
 
 CLUBS = ["Driver", "3W", "5W", "5H", "3I", "4I", "5I", "6I", "7I", "8I", "9I", "PW", "GW", "SW", "LW", "Putter"]
 
@@ -29,7 +25,16 @@ def main():
     Connects to an OptiShot device and reads swing data packets.
     Includes updated HID report formatting for hardware compatibility.
     """
-    
+    parser = argparse.ArgumentParser(description="OptiShot 2 bridge for golf simulators")
+    parser.add_argument("--target", choices=sorted(sim_api.TARGETS), default="ogs",
+                        help="Simulator API: ogs (OpenGolfSim, default), "
+                             "munigolf / gspro (GSPro Open Connect v1)")
+    parser.add_argument("--host", default="127.0.0.1", help="Simulator API host (default 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=None,
+                        help="Simulator API port (default 3111 for ogs, 921 for munigolf/gspro)")
+    args = parser.parse_args()
+    api = sim_api.create_client(args.target, args.host, args.port)
+
     # Initialize Physics Engine
     physics = PhysicsEngine()
     reader = OptiReader()
@@ -37,14 +42,11 @@ def main():
     processor = ShotProcessor()
     
     print("--- OptiSender v2 with Physics ---")
+    print(f"Simulator API: {api.label} at {api.host}:{api.port}")
     user_club = "Driver" # Default to Driver on start
     print(f"Selected Club: {user_club}")
 
     simulation_mode = False
-    api_socket = None
-    api_buffer = ""
-    last_heartbeat_time = time.time()
-    last_connection_attempt = 0
     last_keep_alive_time = time.time()
     last_reconnect_attempt = 0
     KEEP_ALIVE_INTERVAL = 30.0   # seconds between keep-alive pings
@@ -112,25 +114,6 @@ def main():
     if simulation_mode:
         sim_window.show()
 
-    def try_api_connect():
-        nonlocal api_socket, last_connection_attempt
-        if api_socket is not None:
-            return
-        
-        now = time.time()
-        if now - last_connection_attempt < 5.0: # Retry every 5 seconds
-            return
-            
-        last_connection_attempt = now
-        try:
-            api_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            api_socket.settimeout(2.0)
-            api_socket.connect((API_IP, API_PORT))
-            print(f"SUCCESS: Connected to OpenGolfSim API at {API_IP}:{API_PORT}")
-            api_socket.sendall(json.dumps({"type": "device", "status": "ready"}).encode('utf-8'))
-        except Exception:
-            api_socket = None
-
     # Enable keyboard listener
     if keyboard:
         print("\n[INPUT] Keyboard control active (hold Ctrl).")
@@ -193,72 +176,28 @@ def main():
             #     print(f"*** MANUAL CLUB SELECT: {user_club} ***")
             #     overlay.push_state({"club": user_club, "source": "Manual", "hand_label": "LH" if left_handed else "RH"})
 
-            # Attempt API reconnection if offline
-            try_api_connect()
-
-            # Send Heartbeat every 0.5 seconds
-            if api_socket and (time.time() - last_heartbeat_time > 0.5):
-                try:
-                    api_socket.sendall(json.dumps({"type": "device", "status": "ready"}).encode('utf-8'))
-                    last_heartbeat_time = time.time()
-                except Exception:
-                    print("API Heartbeat failed.")
-                    api_socket.close()
-                    api_socket = None
+            # Connect / reconnect and send heartbeats
+            api.maintain(using_ball)
 
             # Check for incoming API messages
-            if api_socket:
-                try:
-                    readable, _, _ = select.select([api_socket], [], [], 0)
-                    if readable:
-                        new_data = api_socket.recv(4096).decode('utf-8')
-                        if new_data:
-                            api_buffer += new_data
-                            while api_buffer:
-                                api_buffer = api_buffer.lstrip()
-                                if not api_buffer: break
-                                try:
-                                    decoder = json.JSONDecoder()
-                                    msg_json, end_index = decoder.raw_decode(api_buffer)
-                                    if msg_json.get("status") != 200 and msg_json.get("code") != 200:
-                                        print(f"\n[API IN] {json.dumps(msg_json)}")
+            for event, value in api.poll():
+                if event == "club":
+                    if value != user_club:
+                        user_club = value
+                        print(f"*** CLUB UPDATED TO: {user_club} ***")
+                        overlay.push_state({"club": user_club, "source": "API", "hand_label": "LH" if left_handed else "RH"})
+                        sim_window.set_club(user_club)
 
-                                    if msg_json.get("type") == "player":
-                                        club_data = msg_json.get("data", {}).get("club", {})
-                                        cid = club_data.get("id", "")
-                                        cname = club_data.get("name", "")
-                                        if cid:
-                                            if cid == "DR" or cid == "1W": new_club = "Driver"
-                                            elif cid == "PT": new_club = "Putter"
-                                            elif cid in ["AW", "UW"]: new_club = "GW"
-                                            else: new_club = cid 
-
-                                            if new_club != user_club:
-                                                user_club = new_club
-                                                print(f"*** CLUB UPDATED TO: {user_club} (rec: {cname}) ***")
-                                                overlay.push_state({"club": user_club, "source": "API", "hand_label": "LH" if left_handed else "RH"})
-                                                sim_window.set_club(user_club)
-
-                                    elif msg_json.get("type") == "result":
-                                        res_data = msg_json.get("data", {}).get("result", {})
-                                        print(f"\n[API] SHOT RESULT: Carry: {res_data.get('carry', 0):.1f} | Total: {res_data.get('total', 0):.1f}")
-                                        if sim_ready_timer is not None:
-                                            sim_ready_timer.cancel()
-                                        sim_ready_timer = threading.Timer(3.0, sim_window.set_ready)
-                                        sim_ready_timer.daemon = True
-                                        sim_ready_timer.start()
-
-                                    api_buffer = api_buffer[end_index:]
-                                except json.JSONDecodeError:
-                                    break
-                        else:
-                            api_socket.close()
-                            api_socket = None
-                except Exception as e:
-                    print(f"API Receive Error: {e}")
-                    if api_socket: 
-                        api_socket.close()
-                        api_socket = None
+                elif event == "result":
+                    if "carry" in value or "total" in value:
+                        print(f"\n[API] SHOT RESULT: Carry: {value.get('carry', 0):.1f} | Total: {value.get('total', 0):.1f}")
+                    else:
+                        print("\n[API] Shot received by simulator.")
+                    if sim_ready_timer is not None:
+                        sim_ready_timer.cancel()
+                    sim_ready_timer = threading.Timer(3.0, sim_window.set_ready)
+                    sim_ready_timer.daemon = True
+                    sim_ready_timer.start()
 
             now = time.time()
 
@@ -406,23 +345,8 @@ def main():
                     "shot_shape":   shape_label,
                 })
 
-                if api_socket:
-                    payload = {
-                        "type": "shot",
-                        "shot": {
-                            "ballSpeed": ball.ball_speed,
-                            "verticalLaunchAngle": ball.launch_angle,
-                            "horizontalLaunchAngle": ball.launch_direction,
-                            "spinSpeed": ball.total_spin,
-                            "spinAxis": ball.spin_axis
-                        }
-                    }
-                    try:
-                        api_socket.sendall(json.dumps(payload).encode('utf-8'))
-                        print(">> Shot data sent to API.")
-                    except Exception as e:
-                        print(f"Error sending to API: {e}")
-                
+                api.send_shot(ball, metrics)
+
                 # Device LED Feedback Loop
                 if not simulation_mode:
                     try:
@@ -454,8 +378,7 @@ def main():
                 reader.disconnect()
             except Exception:
                 pass
-        if api_socket:
-            api_socket.close()
+        api.close()
         if listener:
             listener.stop()
 
