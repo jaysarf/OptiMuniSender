@@ -31,7 +31,7 @@ def main():
                              "munigolf / gspro (GSPro Open Connect v1)")
     parser.add_argument("--host", default="127.0.0.1", help="Simulator API host (default 127.0.0.1)")
     parser.add_argument("--port", type=int, default=None,
-                        help="Simulator API port (default 3111 for ogs, 921 for munigolf/gspro)")
+                        help="Simulator API port (default 3111 for ogs, 9210 for munigolf, 921 for gspro)")
     args = parser.parse_args()
     api = sim_api.create_client(args.target, args.host, args.port)
 

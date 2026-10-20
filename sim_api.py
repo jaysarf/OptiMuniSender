@@ -4,8 +4,9 @@ Golf simulator API clients.
 Two TCP protocols are supported, selected at startup with --target:
 
   ogs       OpenGolfSim device API (default)       127.0.0.1:3111
-  munigolf  GSPro Open Connect v1 (Muni Golf,       127.0.0.1:921
-            GSPro, OpenGolf Connect, ...)
+  munigolf  GSPro Open Connect v1 (Muni Golf)      127.0.0.1:9210
+  gspro     GSPro Open Connect v1 (GSPro,          127.0.0.1:921
+            OpenGolf Connect, ...)
 
 Both clients expose the same interface to the main loop:
 
@@ -38,6 +39,7 @@ class _TcpJsonClient:
         self._buffer = ""
         self._last_attempt = 0.0
         self._last_heartbeat = time.time()
+        self._last_error = None
 
     @property
     def connected(self):
@@ -55,9 +57,16 @@ class _TcpJsonClient:
                 self.sock.connect((self.host, self.port))
                 self._buffer = ""
                 print(f"SUCCESS: Connected to {self.label} API at {self.host}:{self.port}")
+                self._last_error = None
                 self._on_connect(using_ball)
                 self._last_heartbeat = time.time()
-            except Exception:
+            except Exception as e:
+                # Report each distinct failure once instead of every retry.
+                err = str(e)
+                if err != self._last_error:
+                    print(f"[API] Cannot connect to {self.label} at {self.host}:{self.port}: {err} "
+                          f"(retrying every {CONNECT_RETRY_INTERVAL:.0f}s)")
+                    self._last_error = err
                 self._drop()
             return
 
@@ -301,7 +310,7 @@ class GSProConnectClient(_TcpJsonClient):
 
 TARGETS = {
     "ogs":      (OpenGolfSimClient,  3111),
-    "munigolf": (GSProConnectClient, 921),
+    "munigolf": (GSProConnectClient, 9210),
     "gspro":    (GSProConnectClient, 921),
 }
 
