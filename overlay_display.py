@@ -1,3 +1,4 @@
+import sys
 import tkinter as tk
 import queue
 import threading
@@ -13,6 +14,12 @@ FONT_HDR  = ("Consolas", 20, "bold")
 FONT_VAL  = ("Consolas", 20)
 FONT_LBL  = ("Consolas", 18)
 WIDTH     = 160
+
+# Tk 8.6 on Linux segfaults (libXft) when a colour-emoji font is picked to
+# render emoji such as ⛳ / 📌 — use plain text outside Windows.
+_EMOJI_OK  = sys.platform == "win32"
+TITLE_TEXT = "⛳ OptiSender  ✥" if _EMOJI_OK else "OptiSender  ✥"
+PIN_TEXT   = "📌" if _EMOJI_OK else "PIN"
 
 
 class OverlayDisplay:
@@ -62,11 +69,11 @@ class OverlayDisplay:
         # ── Title / drag bar ─────────────────────────────────────────
         title_bar = tk.Frame(root, bg="#2a4a6b", cursor="fleur")
         title_bar.pack(fill="x")
-        title_lbl = tk.Label(title_bar, text="⛳ OptiSender  ✥", bg="#2a4a6b", fg="#ffffff",
+        title_lbl = tk.Label(title_bar, text=TITLE_TEXT, bg="#2a4a6b", fg="#ffffff",
                              font=("Consolas", 11, "bold"), pady=4, cursor="fleur")
         title_lbl.pack(side="left", padx=6)
         self._pin_btn = tk.Button(
-            title_bar, text="📌", bg="#2a4a6b", fg="#ffffff",
+            title_bar, text=PIN_TEXT, bg="#2a4a6b", fg="#ffffff",
             font=("Consolas", 9), relief="flat", cursor="hand2",
             activebackground="#3a5a7b", activeforeground="#ffffff",
             command=self._toggle_pin
