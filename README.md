@@ -86,21 +86,25 @@ If OpenGolfSim is not yet running when OptiSender starts, that is fine. OptiSend
 
 ```bash
 python OptiSender.py                       # OpenGolfSim (default, 127.0.0.1:3111)
-python OptiSender.py --target munigolf --host 192.168.x.x   # Muni Golf (port 9210)
+python OptiSender.py --target munigolf     # Muni Golf, via Launch Monitor Connect (127.0.0.1:921)
 ```
 
 | Option | Default | Description |
 |---|---|---|
 | `--target` | `ogs` | `ogs` = OpenGolfSim device API. `munigolf` / `gspro` = GSPro Open Connect API v1 |
-| `--host` | `127.0.0.1` | Simulator host — for Muni Golf, use the IP shown in *Launch monitor → Listening on* |
-| `--port` | `3111` (ogs) / `9210` (munigolf) / `921` (gspro) | Simulator port — use the port shown in the simulator's settings if it differs |
+| `--host` | `127.0.0.1` | Simulator host (the PC running Muni Golf's Launch Monitor Connect) |
+| `--port` | `3111` (ogs) / `921` (munigolf, gspro) | Simulator port — use the port shown in the simulator's settings if it differs |
 
 With the executable, add the options to a Windows shortcut target, e.g. `OptiSender.exe --target munigolf`.
 
 #### Muni Golf setup
 
-1. In Muni Golf, open **Launch monitor** and note the *Listening on* address (e.g. `192.168.40.15:9210`).
-2. Start OptiSender with `--target munigolf --host <that IP>` (add `--port <n>` if the port is not 9210). Muni Golf may only listen on the LAN address, not on `127.0.0.1`.
+Muni Golf's **Launch Monitor Connect** window is a relay: it accepts GSPro Open Connect clients on port **921** and forwards shots to the game (default `:9210`).
+
+1. Start Muni Golf, then in **Launch Monitor Connect** select **Open Connect API**, keep *Listen Port* `921`, and click **Connect**.
+2. Start OptiSender with `--target munigolf` (add `--host <ip>` if the relay runs on another PC, `--port <n>` if *Listen Port* is not 921).
+
+> Do **not** point OptiSender at the game port (`9210`): that port is reserved for the relay, and connecting to it directly makes the game drop the connection.
 3. When Muni Golf reports the player's club (`Code 201`), the active club in OptiSender updates automatically. GSPro club codes (`DR`, `W3`, `H4`, `I7`, `PW`, `PT`, …) are mapped to the tuning profiles in `tuning.json`. All hybrids use the `5H` profile, and `I1`/`I2` use `3I`.
 
 Shots are sent as GSPro Open Connect v1 JSON (`BallData`: Speed mph, VLA, HLA, TotalSpin, SpinAxis, BackSpin, SideSpin; `ClubData`: Speed, Path, FaceToTarget). A heartbeat is sent every 2 seconds.

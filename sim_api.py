@@ -4,7 +4,9 @@ Golf simulator API clients.
 Two TCP protocols are supported, selected at startup with --target:
 
   ogs       OpenGolfSim device API (default)       127.0.0.1:3111
-  munigolf  GSPro Open Connect v1 (Muni Golf)      127.0.0.1:9210
+  munigolf  GSPro Open Connect v1, via Muni Golf's 127.0.0.1:921
+            Launch Monitor Connect relay (it forwards to the game on :9210 —
+            do not connect to :9210 directly, that port belongs to the relay)
   gspro     GSPro Open Connect v1 (GSPro,          127.0.0.1:921
             OpenGolf Connect, ...)
 
@@ -310,7 +312,7 @@ class GSProConnectClient(_TcpJsonClient):
 
 TARGETS = {
     "ogs":      (OpenGolfSimClient,  3111),
-    "munigolf": (GSProConnectClient, 9210),
+    "munigolf": (GSProConnectClient, 921),
     "gspro":    (GSProConnectClient, 921),
 }
 
